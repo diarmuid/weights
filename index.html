@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lift Log</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%232a78d6'/%3E%3Cpath d='M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
   :root {
     color-scheme: light dark;
@@ -128,9 +129,27 @@
   th.num { text-align: right; }
   .set { display: inline-block; padding: 2px 7px; margin: 2px 4px 2px 0; border-radius: 6px; background: var(--seg); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
   .set.top { color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--axis); }
+  .warmup-line { margin-top: 4px; font-size: 11.5px; color: var(--muted); }
+  .pr-badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--seg); color: var(--good); font-size: 10.5px; font-weight: 700; letter-spacing: .02em; white-space: nowrap; vertical-align: 1px; }
   .lift-link { display: inline-flex; align-items: center; gap: 8px; border: 0; background: none; padding: 0; cursor: pointer; text-decoration: none; }
   .lift-link:hover span:last-child { text-decoration: underline; }
   .muted { color: var(--muted); }
+
+  /* sync status */
+  .sync { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
+  .sync a { color: inherit; }
+  .sync a:hover { color: var(--ink); }
+
+  /* heatmap */
+  .heatmap-card { padding: 18px; margin-bottom: 16px; }
+  .heatmap-scroll { overflow-x: auto; padding-bottom: 6px; }
+  .heatmap { display: flex; gap: 3px; align-items: flex-start; min-width: max-content; }
+  .hm-week { display: flex; flex-direction: column; gap: 3px; }
+  .hm-month { height: 14px; font-size: 10px; color: var(--muted); white-space: nowrap; }
+  .hm-cell { width: 11px; height: 11px; border-radius: 2px; background: var(--seg); flex: none; }
+  .hm-cell[data-level="0"] { box-shadow: inset 0 0 0 1px var(--border); }
+  .hm-legend { display: flex; align-items: center; gap: 6px; margin-top: 10px; color: var(--muted); font-size: 11.5px; }
+  .hm-legend .hm-cell { width: 10px; height: 10px; }
 
   #app { transition: opacity .2s; }
   #app.loading { opacity: .55; }
@@ -161,6 +180,7 @@
       <div>
         <h1>Lift Log</h1>
         <p class="sub" id="subtitle">Loading your training history…</p>
+        <p class="sync" id="syncInfo" hidden></p>
       </div>
     </div>
     <div class="top-actions">
@@ -203,6 +223,11 @@
       </div>
     </div>
     <section class="stats" id="stats"></section>
+    <section class="card heatmap-card rise" id="heatmapCard" hidden>
+      <header class="card-h"><h3>Training consistency</h3><p id="heatmapSub"></p></header>
+      <div class="heatmap-scroll"><div class="heatmap" id="heatmap"></div></div>
+      <div class="hm-legend"><span>Less</span><span class="hm-cell" data-level="0"></span><span class="hm-cell" data-level="1"></span><span class="hm-cell" data-level="2"></span><span class="hm-cell" data-level="3"></span><span class="hm-cell" data-level="4"></span><span>More</span><span id="hmLegendNote" style="margin-left:6px">working sets per day</span></div>
+    </section>
     <section class="grid" id="charts"></section>
     <section class="card table-card rise">
       <header class="card-h"><h3 id="tableTitle">Session log</h3><p id="tableSub"></p></header>
@@ -456,6 +481,19 @@ const dDay   = d => d.toLocaleDateString('en-IE', { weekday: 'short', day: 'nume
 const dFull  = d => d.toLocaleDateString('en-IE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const dkey = d => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 const sum = a => a.reduce((x, y) => x + y, 0);
+function relTime(input) {
+  const then = input instanceof Date ? input : new Date(input);
+  if (isNaN(then)) return '';
+  const sec = Math.max(0, (Date.now() - then.getTime()) / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day} day${day === 1 ? '' : 's'} ago`;
+  return dShort(then);
+}
 
 const hexRgb = h => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
 const mix = (a, b, t) => { const A = hexRgb(a), B = hexRgb(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
@@ -481,10 +519,17 @@ function buildLifts(text) {
   const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
   const LB = 2.2046226;
   const rows = [];
+  const bwByDay = new Map();
   res.data.forEach((r, i) => {
     const d = parseDate(r['Date']);
+    if (!d) return;
+    const key = dkey(d);
+    let bwk = num(r['Body Weight (KG)']), bwl = num(r['Body Weight (LB)']);
+    if (bwk == null && bwl != null) bwk = bwl / LB;
+    if (bwl == null && bwk != null) bwl = bwk * LB;
+    if (bwk != null) bwByDay.set(key, { kg: bwk, lb: bwl });
     const name = (r['Exercise Name'] || '').trim();
-    if (!d || !name) return;
+    if (!name) return;
     let kg = num(r['Weight (KG)']), lb = num(r['Weight (LB)']);
     if (kg == null && lb != null) kg = lb / LB;
     if (lb == null && kg != null) lb = kg * LB;
@@ -502,15 +547,87 @@ function buildLifts(text) {
     if (!s) { s = { key, date: r.d, sets: [] }; l.sessions.set(key, s); }
     s.sets.push(r);
   }
-  return [...map.values()].map(l => ({ ...l, sessions: [...l.sessions.values()] }));
+  const lifts = [...map.values()].map(l => ({ ...l, sessions: [...l.sessions.values()] }));
+  for (const l of lifts) {
+    for (const s of l.sessions) {
+      s.bw = bwByDay.get(s.key) || null;
+      markWarmups(s.sets);
+    }
+    computePRs(l);
+  }
+  return lifts;
 }
 
-/* A set only counts once reps are logged. Top weight = heaviest completed set;
-   "reps at top" = best reps at that weight (your final AMRAP set on GreySkull). */
+/* Warm-up detection. The export interleaves warm-up and working sets with the
+   same Set Order (warm-ups use 4/3/2 reps, working sets 5/5/AMRAP). When an
+   order repeats, the lighter/lower-rep row is the warm-up. Older sessions use
+   a single ascending ramp at the start, so a set below 80% of the day's top
+   weight is also treated as a warm-up. */
+function markWarmups(sets) {
+  const top = Math.max(...sets.map(s => s.kg));
+  const byOrder = new Map();
+  sets.forEach(s => {
+    if (!byOrder.has(s.order)) byOrder.set(s.order, []);
+    byOrder.get(s.order).push(s);
+  });
+  for (const group of byOrder.values()) {
+    if (group.length > 1) {
+      if (group.every(s => s.kg === 0)) { group.forEach(s => { s.warmup = false; }); continue; }
+      let main = group[0];
+      for (const s of group) {
+        if (s.kg > main.kg || (s.kg === main.kg && (s.reps ?? -1) > (main.reps ?? -1))) main = s;
+      }
+      group.forEach(s => { s.warmup = s !== main; });
+    } else {
+      const s = group[0];
+      s.warmup = s.kg > 0 && top > s.kg && s.kg < top * 0.8;
+    }
+  }
+}
+
+/* All-time bests and whether each session set a new PR at the time. */
+function computePRs(lift) {
+  let bestTop = -Infinity, bestE = -Infinity, bestReps = -Infinity;
+  let topDate = null, eDate = null, repsDate = null;
+  const ordered = [...lift.sessions].sort((a, b) => a.date - b.date);
+  for (const s of ordered) {
+    const m = metrics(s, 'kg');
+    s.pr = { top: false, e1rm: false, reps: false };
+    if (!m.done) continue;
+    if (m.bodyweight) {
+      if (m.bestReps > bestReps) {
+        if (bestReps !== -Infinity) s.pr.reps = true;
+        bestReps = m.bestReps; repsDate = s.date;
+      }
+    } else {
+      if (m.top > bestTop) {
+        if (bestTop !== -Infinity) s.pr.top = true;
+        bestTop = m.top; topDate = s.date;
+      }
+      if (m.e1rm != null && m.e1rm > bestE) {
+        if (bestE !== -Infinity) s.pr.e1rm = true;
+        bestE = m.e1rm; eDate = s.date;
+      }
+    }
+  }
+  lift.best = {
+    top: bestTop === -Infinity ? null : bestTop, topDate,
+    e1rm: bestE === -Infinity ? null : bestE, eDate,
+    reps: bestReps === -Infinity ? null : bestReps, repsDate,
+  };
+}
+
+/* A set only counts once reps are logged. Warm-up sets are excluded from top
+   weight, reps-at-top, volume and set counts, but are kept for display. */
 function metrics(s, u) {
   const w = x => u === 'kg' ? x.kg : x.lb;
-  const done = s.sets.filter(x => x.reps != null && x.reps > 0);
-  if (!done.length) return { done: false, setsTxt: [], nSets: 0 };
+  const working = s.sets.filter(x => !x.warmup);
+  const base = working.length ? working : s.sets;
+  const done = base.filter(x => x.reps != null && x.reps > 0);
+  const warmups = s.sets.filter(x => x.warmup && x.reps != null && x.reps > 0)
+    .sort((a, b) => w(a) - w(b) || a.order - b.order)
+    .map(x => (w(x) > 0 ? fmt(w(x)) : 'BW') + '×' + x.reps);
+  if (!done.length) return { done: false, setsTxt: [], warmups, nWarmups: warmups.length, nSets: 0, volume: 0, totalReps: 0 };
   const top = Math.max(...done.map(w));
   const topSets = done.filter(x => w(x) === top);
   const bestReps = Math.max(...topSets.map(x => x.reps));
@@ -518,8 +635,8 @@ function metrics(s, u) {
   const setsTxt = [...done].sort((a, b) => w(a) - w(b) || a.order - b.order)
     .map(x => ({ txt: (w(x) > 0 ? fmt(w(x)) : 'BW') + '×' + x.reps, top: w(x) === top }));
   return {
-    done: true, top, bestReps, e1rm, bodyweight: top === 0, setsTxt, nSets: done.length,
-    totalReps: sum(done.map(x => x.reps)), volume: sum(done.map(x => w(x) * x.reps)),
+    done: true, top, bestReps, e1rm, bodyweight: top === 0, setsTxt, warmups, nWarmups: warmups.length,
+    nSets: done.length, totalReps: sum(done.map(x => x.reps)), volume: sum(done.map(x => w(x) * x.reps)),
   };
 }
 
@@ -708,8 +825,19 @@ function liftCharts(lift, t) {
     t, { yTitle: 'reps', zero: true });
   const cv3 = chartCard(bw ? 'Total reps per session' : 'Training volume',
     bw ? 'All completed reps added together.' : `Sets × reps × weight, all sets added together (${u}).`, false, n++);
+  cv3.setAttribute('aria-label', `${lift.name} ${bw ? 'total reps' : 'training volume'} over time.`);
   makeChart(cv3, 'bar', [barSet(bw ? 'Total reps' : 'Volume', pts, m => bw ? m.totalReps : m.volume, col,
     { unitLabel: bw ? 'reps' : u, dec: 0, endLabel: p => fmt(p.y, 0) })], t, { yTitle: bw ? 'reps' : u, zero: true });
+  if (!bw) {
+    const rel = pts.filter(s => s.bw && s.m.top > 0)
+      .map(s => ({ date: s.date, m: { rel: s.m.top / (u === 'kg' ? s.bw.kg : s.bw.lb) } }));
+    if (rel.length > 1) {
+      const cv4 = chartCard('Relative strength', 'Heaviest set as a multiple of body weight on the same day.', false, n++);
+      cv4.setAttribute('aria-label', `${lift.name} relative strength over time.`);
+      makeChart(cv4, 'line', [lineSet('Relative strength', rel, m => m.rel, t.series[6], t,
+        { unitLabel: '× BW', dec: 2, endLabel: p => `${fmt(p.y, 2)}×` })], t, { yTitle: '× body weight' });
+    }
+  }
 }
 
 function allCharts(view, t) {
@@ -732,6 +860,17 @@ function allCharts(view, t) {
   }
   if (view.lifts.some(l => l.idx >= 8)) {
     $('#charts').append(el('p', { class: 'hint span2', text: 'Overview charts show the first 8 lifts; select any other lift above to see it on its own.' }));
+  }
+  const bwMap = new Map();
+  view.lifts.forEach(l => l.ss.forEach(s => { if (s.bw) bwMap.set(s.key, { date: s.date, bw: s.bw }); }));
+  const bwPts = [...bwMap.values()].sort((a, b) => a.date - b.date);
+  if (bwPts.length > 1) {
+    const cv = chartCard('Body weight', 'Body weight logged alongside each session.', true, n++);
+    cv.setAttribute('aria-label', 'Body weight over time.');
+    makeChart(cv, 'line', [lineSet('Body weight',
+      bwPts.map(p => ({ date: p.date, m: { bw: u === 'kg' ? p.bw.kg : p.bw.lb } })),
+      m => m.bw, t.series[6], t, { unitLabel: u, dec: 1, endLabel: p => `${fmt(p.y, 1)} ${u}` })],
+      t, { yTitle: u });
   }
 }
 
@@ -762,14 +901,22 @@ const tile = (label, value, unit, sub, i) => el('div', { class: 'card tile rise'
 function renderStats(view) {
   const box = $('#stats'); box.replaceChildren();
   const u = S.unit;
+  const conv = kg => u === 'kg' ? kg : kg * 2.2046226;
   if (S.selected === 'all') {
-    const days = new Set(); let sets = 0, vol = 0;
-    view.lifts.forEach(l => l.ss.forEach(s => { if (s.m.done) { days.add(s.key); sets += s.m.nSets; vol += s.m.volume; } }));
-    box.append(
+    const days = new Set(); let sets = 0, warmupSets = 0, vol = 0;
+    let latestBw = null, latestBwDate = null;
+    view.lifts.forEach(l => l.ss.forEach(s => {
+      if (s.m.done) { days.add(s.key); sets += s.m.nSets; warmupSets += s.m.nWarmups; vol += s.m.volume; }
+      if (s.bw && (!latestBwDate || s.date > latestBwDate)) { latestBw = s.bw; latestBwDate = s.date; }
+    }));
+    const tiles = [
       tile('Workouts logged', String(days.size), '', 'distinct training days', 0),
       tile('Lifts tracked', String(view.lifts.length), '', 'exercises in this range', 1),
-      tile('Sets completed', fmt(sets, 0), '', 'sets with reps logged', 2),
-      tile('Total volume', fmt(vol, 0), u, 'weight × reps, all lifts', 3));
+      tile('Working sets', fmt(sets, 0), '', warmupSets ? `${warmupSets} warm-up sets excluded` : 'sets with reps logged', 2),
+      tile('Total volume', fmt(vol, 0), u, 'weight × reps, warm-ups excluded', 3),
+    ];
+    if (latestBw) tiles.push(tile('Body weight', fmt(conv(latestBw.kg), 1), u, `logged ${dShort(latestBwDate)}`, 4));
+    box.append(...tiles);
     return;
   }
   const lift = view.lifts.find(l => l.name === S.selected);
@@ -777,21 +924,34 @@ function renderStats(view) {
   if (!pts.length) return;
   const first = pts[0], lastS = pts[pts.length - 1];
   const since = dShort(first.date);
+  const best = lift.best || {};
   if (pts.every(s => s.m.bodyweight)) {
-    box.append(
+    const tiles = [
       tile('Best set', String(Math.max(...pts.map(s => s.m.bestReps))), 'reps', 'most reps in one set', 0),
       tile('Total reps', fmt(sum(pts.map(s => s.m.totalReps)), 0), '', 'across all sessions', 1),
-      tile('Sessions', String(pts.length), '', `latest: ${dDay(lastS.date)}`, 2));
+      tile('Sessions', String(pts.length), '', `latest: ${dDay(lastS.date)}`, 2),
+    ];
+    if (best.reps != null) tiles.push(tile('All-time best', String(best.reps), 'reps', `set ${dShort(best.repsDate)}`, 3));
+    box.append(...tiles);
     return;
   }
   const dTop = pts.length > 1 ? lastS.m.top - first.m.top : null;
   const dE = pts.length > 1 ? lastS.m.e1rm - first.m.e1rm : null;
   const vol = sum(pts.map(s => s.m.volume));
-  box.append(
+  const warmups = sum(pts.map(s => s.m.nWarmups));
+  const tiles = [
     tile('Heaviest weight', fmt(lastS.m.top), u, delta(dTop, u, since), 0),
     tile('Estimated 1RM', fmt(lastS.m.e1rm, 1), u, delta(dE, u, since), 1),
     tile('Sessions', String(pts.length), '', `latest: ${dDay(lastS.date)}`, 2),
-    tile('Total volume', fmt(vol, 0), u, `avg ${fmt(vol / pts.length, 0)} ${u} per session`, 3));
+    tile('Total volume', fmt(vol, 0), u, warmups ? `avg ${fmt(vol / pts.length, 0)} ${u} · ${warmups} warm-ups excluded` : `avg ${fmt(vol / pts.length, 0)} ${u} per session`, 3),
+  ];
+  if (best.top != null) tiles.push(tile('All-time best', fmt(conv(best.top)), u, `set ${dShort(best.topDate)}`, 4));
+  const relS = [...pts].reverse().find(s => s.bw && s.m.top > 0);
+  if (relS) {
+    const bw = u === 'kg' ? relS.bw.kg : relS.bw.lb;
+    tiles.push(tile('Relative strength', fmt(relS.m.top / bw, 2), '× BW', `${fmt(bw, 1)} ${u} body weight`, 5));
+  }
+  box.append(...tiles);
 }
 
 function renderCharts(view) {
@@ -810,7 +970,7 @@ function renderTable(view) {
   view.lifts.forEach(l => { if (all || l.name === S.selected) l.ss.forEach(s => rows.push({ l, s })); });
   rows.sort((a, b) => b.s.date - a.s.date || a.l.idx - b.l.idx);
   $('#tableTitle').textContent = 'Session log';
-  $('#tableSub').textContent = `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}, newest first. Heaviest sets are outlined.`;
+  $('#tableSub').textContent = `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}, newest first. Heaviest sets are outlined; warm-up sets are listed separately.`;
   const u = S.unit;
   const th = (text, cls = '') => el('th', { class: cls, text });
   $('#thead').replaceChildren(el('tr', {}, th('Date'), all ? th('Lift') : null, th('Sets (' + u + '×reps)'),
@@ -818,11 +978,21 @@ function renderTable(view) {
   const tb = $('#tbody'); tb.replaceChildren();
   rows.forEach(({ l, s }) => {
     const m = s.m;
-    const setsCell = m.done
-      ? el('td', {}, m.setsTxt.map(x => el('span', { class: 'set' + (x.top ? ' top' : ''), text: x.txt })))
-      : el('td', { class: 'muted', text: 'No reps logged' });
+    const prBits = [];
+    if (s.pr) {
+      if (s.pr.top) prBits.push('heaviest weight');
+      if (s.pr.e1rm) prBits.push('estimated 1RM');
+      if (s.pr.reps) prBits.push('reps');
+    }
+    const badge = prBits.length
+      ? el('span', { class: 'pr-badge', title: `New all-time PR: ${prBits.join(' and ')}`, text: '★ PR' })
+      : null;
+    const setsCell = el('td', {},
+      m.done ? m.setsTxt.map(x => el('span', { class: 'set' + (x.top ? ' top' : ''), text: x.txt }))
+        : el('span', { class: 'muted', text: 'No reps logged' }),
+      m.warmups.length ? el('div', { class: 'warmup-line', text: `Warm-up: ${m.warmups.join(' · ')}` }) : null);
     tb.append(el('tr', {},
-      el('td', { class: 'num', style: 'text-align:left', text: dDay(s.date) }),
+      el('td', { class: 'num', style: 'text-align:left' }, dDay(s.date), badge),
       all ? el('td', {}, el('button', { class: 'lift-link', type: 'button', onclick: () => { S.selected = l.name; render(); } },
         el('span', { class: 'dot', style: `--dot:${dotVar(l)}` }), el('span', { text: l.name }))) : null,
       setsCell,
@@ -838,7 +1008,7 @@ function renderHeader() {
     const m = metrics(s, 'kg');
     if (m.done) { days.add(s.key); sets += m.nSets; dates.push(s.date); }
   }));
-  const parts = [`${days.size} workouts`, `${S.lifts.length} lifts`, `${fmt(sets, 0)} sets`];
+  const parts = [`${days.size} workouts`, `${S.lifts.length} lifts`, `${fmt(sets, 0)} working sets`];
   if (dates.length) {
     const a = new Date(Math.min(...dates)), b = new Date(Math.max(...dates));
     parts.push(`${dShort(a)} – ${b.toLocaleDateString('en-IE', { day: 'numeric', month: 'short', year: 'numeric' })}`);
@@ -847,11 +1017,57 @@ function renderHeader() {
   $('#subtitle').textContent = parts.join(' · ');
 }
 
+function renderHeatmap() {
+  const card = $('#heatmapCard'), grid = $('#heatmap');
+  const counts = new Map();
+  let lastDate = null;
+  S.lifts.forEach(l => l.sessions.forEach(s => {
+    const m = metrics(s, 'kg');
+    if (!m.done) return;
+    counts.set(s.key, (counts.get(s.key) || 0) + m.nSets);
+    if (!lastDate || s.date > lastDate) lastDate = s.date;
+  }));
+  if (!counts.size) { card.hidden = true; return; }
+  card.hidden = false;
+  const t = tokens();
+  const today = new Date(); today.setHours(12, 0, 0, 0);
+  const end = new Date(Math.max(today.getTime(), lastDate ? lastDate.getTime() : today.getTime()));
+  const start = new Date(end); start.setDate(start.getDate() - (26 * 7 - 1));
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  const colors = ['var(--seg)', mix(t.surface, t.series[3], 0.30), mix(t.surface, t.series[3], 0.55), mix(t.surface, t.series[3], 0.78), t.series[3]];
+  const level = n => n === 0 ? 0 : n <= 4 ? 1 : n <= 8 ? 2 : n <= 12 ? 3 : 4;
+  const frag = document.createDocumentFragment();
+  let prevMonth = -1, totalSets = 0;
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const week = el('div', { class: 'hm-week' });
+    const label = cursor.getMonth() !== prevMonth ? cursor.toLocaleDateString('en-IE', { month: 'short' }) : '';
+    prevMonth = cursor.getMonth();
+    week.append(el('div', { class: 'hm-month', text: label }));
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(cursor); d.setDate(d.getDate() + i);
+      if (d > end) { week.append(el('div', { class: 'hm-cell', style: 'visibility:hidden' })); continue; }
+      const n = counts.get(dkey(d)) || 0;
+      totalSets += n;
+      week.append(el('div', {
+        class: 'hm-cell', 'data-level': String(level(n)),
+        style: n ? `background:${colors[level(n)]}` : '',
+        title: `${dFull(d)} — ${n ? n + ' working set' + (n === 1 ? '' : 's') : 'rest day'}`,
+        'aria-label': `${dFull(d)}: ${n} working sets`,
+      }));
+    }
+    frag.append(week);
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  grid.replaceChildren(frag);
+  $('#heatmapSub').textContent = `${counts.size} training days · ${fmt(totalSets, 0)} working sets in the last 26 weeks${lastDate ? ` · last session ${relTime(lastDate.toISOString())}` : ''}.`;
+}
+
 function render() {
   if (!S.lifts.length) return;
   const view = computeView();
   if (S.selected !== 'all' && !view.lifts.some(l => l.name === S.selected)) S.selected = 'all';
-  renderHeader(); renderChips(view); renderStats(view); renderCharts(view); renderTable(view);
+  renderHeader(); renderChips(view); renderStats(view); renderHeatmap(); renderCharts(view); renderTable(view);
 }
 
 /* ------------------------------ loading ------------------------------ */
@@ -901,6 +1117,25 @@ async function loadFile(file) {
   });
 }
 
+async function loadSyncInfo() {
+  try {
+    const r = await fetch('data/meta.json', { cache: 'no-store' });
+    if (!r.ok) return;
+    const m = await r.json();
+    const when = new Date(m && m.synced_at);
+    if (isNaN(when)) return;
+    const box = $('#syncInfo');
+    const link = el('a', { href: CONFIG.DRIVE_FOLDER_URL, target: '_blank', rel: 'noopener', text: 'Google Drive' });
+    box.replaceChildren(
+      'Data updated ',
+      el('span', { title: when.toLocaleString('en-IE') }, relTime(when)),
+      m.source ? ` from ${m.source}` : '',
+      ' · ',
+      link);
+    box.hidden = false;
+  } catch { /* no meta.json, e.g. opened from file:// */ }
+}
+
 /* ------------------------------ wiring ------------------------------ */
 function init() {
   const saved = store.get('ll.theme');
@@ -936,6 +1171,7 @@ function init() {
   addEventListener('dragover', e => e.preventDefault());
   addEventListener('drop', e => { e.preventDefault(); depth = 0; drop.classList.remove('on'); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
 
+  loadSyncInfo();
   start();
 }
 

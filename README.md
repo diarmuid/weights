@@ -6,8 +6,26 @@ this public Google Drive folder:
 https://drive.google.com/drive/folders/1Z4XPVw74dzL7jtgqiXExs_6G8nJBfBU5
 
 A GitHub Action downloads the folder every 6 hours, picks the newest CSV, and
-commits it as `data/latest.csv`. The page then reads that file automatically, so
-it stays up to date without needing a Google API key.
+commits it as `data/latest.csv` plus a small `data/meta.json` describing the
+source file and sync time. The page reads those files automatically, so it stays
+up to date without needing a Google API key.
+
+## What the page shows
+
+- Heaviest-set and estimated-1RM trends per lift.
+- **PR badges** on sessions that set a new all-time best, plus all-time best tiles.
+- **Warm-up sets separated** from working sets. Warm-ups are excluded from top
+  weight, reps-at-top, volume and set counts, but are still listed under each
+  session in the table.
+- A 26-week **training heatmap** of working sets per day.
+- **Body weight** and **relative strength** (lift as a multiple of body weight)
+  when the CSV has those columns filled in.
+- A "data updated …" line showing when the Drive file last changed.
+
+Warm-up detection is heuristic: when a `Set Order` repeats, the lighter or
+lower-rep row is treated as the warm-up; a lighter opening ramp below 80% of the
+day's top weight is also treated as a warm-up. Body-weight charts appear once the
+`Body Weight (KG/LB)` columns contain values.
 
 ## Publishing to GitHub Pages
 
