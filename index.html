@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lift Log</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --good: #006300;
+    --border: rgba(11, 11, 11, 0.10);
+    --seg: rgba(11, 11, 11, 0.06);
+    --shadow: 0 1px 2px rgba(11, 11, 11, 0.04), 0 8px 24px -12px rgba(11, 11, 11, 0.08);
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+    --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --good: #0ca30c;
+      --border: rgba(255, 255, 255, 0.10); --seg: rgba(255, 255, 255, 0.08);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+      --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --good: #0ca30c;
+    --border: rgba(255, 255, 255, 0.10); --seg: rgba(255, 255, 255, 0.08);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+    --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0; color: var(--ink); background: var(--page);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 16px 72px; }
+
+  /* header */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+  .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .logo { width: 44px; height: 44px; border-radius: 13px; background: var(--series-1); color: #fff; display: grid; place-items: center; flex: none; }
+  h1 { margin: 0; font-size: 24px; letter-spacing: -0.02em; font-weight: 650; }
+  .sub { margin: 2px 0 0; color: var(--ink-2); font-size: 13px; }
+  .top-actions { display: flex; gap: 8px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--ink); transition: transform .15s, border-color .15s, background .15s;
+  }
+  .btn:hover { border-color: var(--axis); transform: translateY(-1px); }
+  .btn.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  .btn.icon { padding: 8px 10px; }
+
+  /* cards */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); }
+  .source { padding: 18px; margin-bottom: 18px; }
+  .source label.l { display: block; font-weight: 600; margin-bottom: 8px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .row:first-of-type { margin-top: 0; }
+  input[type="url"] { flex: 1 1 320px; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--page); }
+  .hint { color: var(--ink-2); font-size: 12.5px; margin: 10px 0 0; }
+  .status { margin: 10px 0 0; font-size: 13px; min-height: 1.2em; color: var(--ink-2); }
+  .status.err { color: var(--ink); } .status.err::before { content: "⚠ "; }
+  .status.ok::before { content: "✓ "; color: var(--good); }
+
+  .notice { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 14px; margin-bottom: 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); font-size: 13px; }
+  .notice button { border: 0; background: none; cursor: pointer; color: var(--ink); text-decoration: underline; padding: 0; }
+
+  /* filters */
+  .filters { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); transition: all .15s;
+  }
+  .chip:hover { border-color: var(--axis); color: var(--ink); }
+  .chip[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dot, var(--muted)); flex: none; }
+  .chip.all .dot { background: conic-gradient(var(--series-1), var(--series-2), var(--series-3), var(--series-4), var(--series-5), var(--series-7), var(--series-1)); }
+  .ctrls { display: flex; gap: 10px; flex-wrap: wrap; }
+  .seg { display: inline-flex; padding: 3px; border-radius: 11px; background: var(--seg); }
+  .seg button { border: 0; background: none; padding: 5px 12px; border-radius: 8px; cursor: pointer; color: var(--ink-2); transition: all .15s; }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+
+  /* stat tiles */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 16px; }
+  .tile { padding: 16px 18px; }
+  .t-label { color: var(--ink-2); font-size: 12.5px; }
+  .t-val { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; margin-top: 4px; line-height: 1.15; }
+  .t-unit { font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+  .t-sub { margin-top: 6px; font-size: 12.5px; color: var(--ink-2); }
+  .t-sub.up { color: var(--good); font-weight: 600; }
+
+  /* charts */
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+  .span2 { grid-column: 1 / -1; }
+  .chart-card { padding: 18px 18px 12px; }
+  .card-h h3 { margin: 0; font-size: 15px; font-weight: 650; }
+  .card-h p { margin: 2px 0 10px; color: var(--ink-2); font-size: 12.5px; }
+  .chart-box { position: relative; height: 290px; }
+  .span2 .chart-box { height: 340px; }
+  .empty { padding: 40px 20px; text-align: center; color: var(--ink-2); }
+
+  /* table */
+  .table-card { padding: 18px 0 6px; }
+  .table-card .card-h { padding: 0 18px; }
+  .table-wrap { max-height: 440px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { position: sticky; top: 0; background: var(--surface); text-align: left; font-weight: 600; color: var(--ink-2); padding: 8px 18px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  td { padding: 9px 18px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  th.num { text-align: right; }
+  .set { display: inline-block; padding: 2px 7px; margin: 2px 4px 2px 0; border-radius: 6px; background: var(--seg); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  .set.top { color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--axis); }
+  .lift-link { display: inline-flex; align-items: center; gap: 8px; border: 0; background: none; padding: 0; cursor: pointer; text-decoration: none; }
+  .lift-link:hover span:last-child { text-decoration: underline; }
+  .muted { color: var(--muted); }
+
+  #app { transition: opacity .2s; }
+  #app.loading { opacity: .55; }
+
+  .rise { animation: rise .5s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+  @media (prefers-reduced-motion: reduce) { .rise { animation: none; } .btn:hover { transform: none; } }
+
+  .drop { position: fixed; inset: 12px; z-index: 50; border: 2px dashed var(--series-1); border-radius: 20px; background: color-mix(in srgb, var(--page) 88%, transparent); display: none; place-items: center; font-size: 20px; font-weight: 600; pointer-events: none; }
+  .drop.on { display: grid; }
+
+  @media (max-width: 760px) {
+    .grid { grid-template-columns: 1fr; }
+    .chart-box, .span2 .chart-box { height: 280px; }
+    th, td { padding-left: 12px; padding-right: 12px; }
+    .table-card .card-h { padding: 0 12px; }
+    .hide-sm { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>
+      </div>
+      <div>
+        <h1>Lift Log</h1>
+        <p class="sub" id="subtitle">Loading your training history…</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn" id="srcBtn" aria-expanded="false" aria-controls="source">Data source</button>
+      <button class="btn icon" id="themeBtn" aria-label="Toggle light / dark theme" title="Toggle theme">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="card source" id="source" hidden>
+    <form id="srcForm">
+      <label class="l" for="csvUrl">Link to your CSV</label>
+      <div class="row">
+        <input id="csvUrl" type="url" placeholder="https://drive.google.com/file/d/…/view" autocomplete="off">
+        <button class="btn primary" type="submit">Load</button>
+      </div>
+      <div class="row">
+        <label class="btn" for="csvFile">Choose file…</label>
+        <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
+        <span class="hint" style="margin:0">or drop a CSV anywhere on this page</span>
+      </div>
+      <p class="hint">This page normally loads the newest CSV automatically from your <a href="https://drive.google.com/drive/folders/1Z4XPVw74dzL7jtgqiXExs_6G8nJBfBU5" target="_blank" rel="noopener">Google Drive folder</a>. A GitHub Action re-syncs that file every 6 hours. To load a different file, paste a Google Drive share link (set to “Anyone with the link”) or use “Choose file…”.</p>
+      <p class="status" id="srcStatus" role="status"></p>
+    </form>
+  </section>
+
+  <div class="notice" id="notice" hidden><span id="noticeText"></span><button type="button" id="noticeX">Dismiss</button></div>
+
+  <div id="app">
+    <div class="filters">
+      <div class="chips" id="chips" role="group" aria-label="Exercise"></div>
+      <div class="ctrls">
+        <div class="seg" id="rangeSeg" role="group" aria-label="Date range">
+          <button data-v="all">All time</button><button data-v="30">30 days</button><button data-v="7">7 days</button>
+        </div>
+        <div class="seg" id="unitSeg" role="group" aria-label="Units">
+          <button data-v="kg">kg</button><button data-v="lb">lb</button>
+        </div>
+      </div>
+    </div>
+    <section class="stats" id="stats"></section>
+    <section class="grid" id="charts"></section>
+    <section class="card table-card rise">
+      <header class="card-h"><h3 id="tableTitle">Session log</h3><p id="tableSub"></p></header>
+      <div class="table-wrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+    </section>
+  </div>
+</div>
+<div class="drop" id="drop">Drop your CSV to load it</div>
+
+<script type="text/csv" id="embeddedCsv">Date,Body Weight (KG),Body Weight (LB),Workout Name,Exercise Name,Set Order,Weight (KG),Weight (LB),Reps,Notes
+Tue 08 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,20.0,45.0,5,0
+Tue 08 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,30.0,65.0,5,0
+Tue 08 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,30.0,65.0,12,0
+Tue 08 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,20.0,45.0,5,0
+Tue 08 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,20.0,45.0,5,0
+Tue 08 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,20.0,45.0,15,0
+Tue 08 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,1,20.0,45.0,5,0
+Tue 08 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,2,20.0,45.0,5,0
+Tue 08 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,3,20.0,45.0,15,0
+Tue 15 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,22.5,50.0,5,0
+Tue 15 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,32.5,70.0,5,0
+Tue 15 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,32.5,70.0,14,0
+Tue 15 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,22.5,50.0,5,0
+Tue 15 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,22.5,50.0,5,0
+Tue 15 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,22.5,50.0,12,0
+Tue 15 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,1,25.0,55.0,5,0
+Tue 15 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,2,25.0,55.0,5,0
+Tue 15 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,3,25.0,55.0,12,0
+Thu 17 Sept 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,1,20.0,45.0,5,35
+Thu 17 Sept 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,2,20.0,45.0,5,35
+Thu 17 Sept 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,3,20.0,45.0,10,35
+Thu 17 Sept 2026,,,GreySkull LP - Phraks variant 2,Chinups,1,0.0,0.0,5,35
+Thu 17 Sept 2026,,,GreySkull LP - Phraks variant 2,Chinups,2,0.0,0.0,5,35
+Thu 17 Sept 2026,,,GreySkull LP - Phraks variant 2,Chinups,3,0.0,0.0,8,35
+Thu 17 Sept 2026,,,GreySkull LP - Phraks variant 2,Deadlift,1,40.0,90.0,10,35
+Tue 22 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,25.0,55.0,5,0
+Tue 22 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,35.0,75.0,5,0
+Tue 22 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,35.0,75.0,10,0
+Tue 22 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,25.0,55.0,5,0
+Tue 22 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,25.0,55.0,5,0
+Tue 22 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,25.0,55.0,10,0
+Tue 22 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,1,30.0,65.0,5,0
+Tue 22 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,2,30.0,65.0,5,0
+Tue 22 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,3,30.0,65.0,15,0
+Sun 27 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,30.0,65.0,5,0
+Sun 27 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,40.0,90.0,5,0
+Sun 27 Sept 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,40.0,90.0,8,0
+Sun 27 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,25.0,55.0,5,0
+Sun 27 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,25.0,55.0,5,0
+Sun 27 Sept 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,25.0,55.0,10,0
+Sun 27 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,1,30.0,65.0,5,0
+Sun 27 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,2,30.0,65.0,5,0
+Sun 27 Sept 2026,,,GreySkull LP - Phraks variant 2,Squat,3,30.0,65.0,15,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,1,20.0,45.0,5,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,2,20.0,45.0,5,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,3,20.0,45.0,7,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Chinups,1,0.0,0.0,,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Chinups,2,0.0,0.0,,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Chinups,3,0.0,0.0,,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Deadlift,1,40.0,90.0,5,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Deadlift,2,40.0,90.0,5,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Deadlift,3,40.0,90.0,15,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,1,60.0,130.0,5,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,2,60.0,130.0,5,0
+Tue 29 Sept 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,3,60.0,130.0,6,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,17.5,40.0,4,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,31.25,70.0,5,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,22.5,50.0,3,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,41.25,90.0,5,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,27.5,60.0,2,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,42.5,95.0,6,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,15.0,35.0,4,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,27.5,60.0,5,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,20.0,45.0,3,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,27.5,60.0,5,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,22.5,50.0,2,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,27.5,60.0,17,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,1,20.0,45.0,4,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,1,35.0,75.0,5,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,2,25.0,55.0,3,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,2,35.0,75.0,5,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,3,30.0,65.0,2,0
+Thu 01 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,3,35.0,75.0,13,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,1,20.0,45.0,4,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,1,22.5,50.0,5,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,2,20.0,45.0,3,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,2,22.5,50.0,5,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,3,20.0,45.0,2,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,3,22.5,50.0,5,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Chinups,1,0.0,0.0,,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Chinups,1,0.0,0.0,,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Chinups,2,0.0,0.0,,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Chinups,2,0.0,0.0,,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Chinups,3,0.0,0.0,,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Chinups,3,0.0,0.0,,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,1,22.5,50.0,4,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,1,40.0,90.0,5,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,2,27.5,60.0,3,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,2,40.0,90.0,5,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,3,35.0,75.0,2,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,3,40.0,90.0,13,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,1,35.0,75.0,4,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,1,60.0,130.0,5,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,2,45.0,100.0,3,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,2,60.0,130.0,5,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,3,55.0,120.0,2,0
+Fri 02 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,3,60.0,130.0,5,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,17.5,40.0,4,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,32.5,70.0,5,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,22.5,50.0,3,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,42.5,95.0,5,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,27.5,60.0,2,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,45.0,100.0,9,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,17.5,40.0,4,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,30.0,65.0,5,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,20.0,45.0,3,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,30.0,65.0,5,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,25.0,55.0,2,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,30.0,65.0,15,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Deadlift,1,25.0,55.0,4,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Deadlift,1,45.0,100.0,5,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Deadlift,2,32.5,70.0,3,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Deadlift,2,45.0,100.0,5,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Deadlift,3,37.5,85.0,2,0
+Tue 06 Oct 2026,,,GreySkull LP - Phraks variant 2,Deadlift,3,45.0,100.0,15,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,1,20.0,45.0,4,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,1,20.0,45.0,5,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,2,15.0,35.0,3,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,2,22.5,50.0,5,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,3,17.5,40.0,2,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,3,22.5,50.0,6,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,1,30.0,65.0,4,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,1,55.0,120.0,5,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,2,35.0,75.0,3,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,2,55.0,120.0,5,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,3,45.0,100.0,2,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,3,55.0,120.0,3,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,1,20.0,45.0,4,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,1,45.0,100.0,5,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,2,15.0,35.0,2,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,2,45.0,100.0,5,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,3,22.5,50.0,2,0
+Thu 08 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,3,45.0,100.0,9,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,25.0,55.0,4,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,45.0,100.0,5,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,32.5,70.0,3,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,45.0,100.0,5,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,37.5,85.0,2,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,45.0,100.0,6,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,17.5,40.0,4,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,30.0,65.0,5,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,20.0,45.0,3,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,30.0,65.0,5,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,25.0,55.0,2,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,30.0,65.0,11,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,1,25.0,55.0,4,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,1,45.0,100.0,5,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,2,32.5,70.0,3,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,2,45.0,100.0,5,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,3,37.5,85.0,2,0
+Fri 09 Oct 2026,,,GreySkull LP - Phraks variant 2,Squat,3,45.0,100.0,10,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,1,10.0,20.0,4,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,1,20.0,45.0,5,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,2,15.0,35.0,3,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,2,20.0,45.0,5,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,3,17.5,40.0,2,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Overhead Press,3,20.0,45.0,10,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,1,30.0,65.0,4,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,1,55.0,120.0,5,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,2,37.5,85.0,3,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,2,50.0,110.0,5,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,3,47.5,105.0,2,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Lat Pulldowns,3,50.0,110.0,6,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Deadlift,1,25.0,55.0,4,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Deadlift,1,50.0,110.0,5,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Deadlift,2,32.5,70.0,3,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Deadlift,2,50.0,110.0,5,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Deadlift,3,40.0,90.0,2,0
+Mon 02 Nov 2026,,,GreySkull LP - Phraks variant 2,Deadlift,3,50.0,110.0,10,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,25.0,55.0,4,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Bench Press,1,47.5,105.0,5,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,35.0,75.0,3,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Bench Press,2,47.5,105.0,5,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,40.0,90.0,2,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Bench Press,3,47.5,105.0,6,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,25.0,55.0,4,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,1,32.5,70.0,5,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,25.0,55.0,3,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,2,32.5,70.0,5,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,27.5,60.0,2,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Barbell Row,3,32.5,70.0,11,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Squat,1,27.5,60.0,4,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Squat,1,50.0,110.0,5,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Squat,2,35.0,75.0,3,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Squat,2,50.0,110.0,,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Squat,3,42.5,95.0,2,0
+Wed 04 Nov 2026,,,GreySkull LP - Phraks variant 2,Squat,3,50.0,110.0,1,0
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* ------------------------------------------------------------------ *
+ *  CONFIG: the page loads CONFIG.CSV_URL automatically. The GitHub     *
+ *  Action refreshes data/latest.csv from the Drive folder every 6 hrs. *
+ *  Override with ?csv=<link> or the "Data source" panel.               *
+ * ------------------------------------------------------------------ */
+const CONFIG = {
+  CSV_URL: 'data/latest.csv',
+  DRIVE_FOLDER_URL: 'https://drive.google.com/drive/folders/1Z4XPVw74dzL7jtgqiXExs_6G8nJBfBU5',
+};
+
+const $ = s => document.querySelector(s);
+const el = (tag, props = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') n.className = v;
+    else if (k === 'text') n.textContent = v;
+    else if (k === 'style') n.style.cssText = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    n.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return n;
+};
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const S = {
+  lifts: [], selected: 'all', source: '',
+  range: store.get('ll.range') || 'all',
+  unit: store.get('ll.unit') || 'kg',
+};
+let charts = [];
+
+/* ------------------------------ helpers ------------------------------ */
+const fmt = (n, d = 2) => Number(n.toFixed(d)).toLocaleString('en-IE', { maximumFractionDigits: 3 });
+const dShort = d => d.toLocaleDateString('en-IE', { day: 'numeric', month: 'short' });
+const dDay   = d => d.toLocaleDateString('en-IE', { weekday: 'short', day: 'numeric', month: 'short' });
+const dFull  = d => d.toLocaleDateString('en-IE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+const dkey = d => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+const sum = a => a.reduce((x, y) => x + y, 0);
+
+const hexRgb = h => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+const mix = (a, b, t) => { const A = hexRgb(a), B = hexRgb(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
+
+const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+function parseDate(s) {
+  s = String(s || '').trim();
+  let m = s.match(/(\d{1,2})\s+([A-Za-z]{3,})\.?,?\s+(\d{4})/);     // "Tue 08 Sept 2026"
+  if (m) { const mo = MONTHS[m[2].slice(0, 3).toLowerCase()]; if (mo !== undefined) return new Date(+m[3], mo, +m[1], 12); }
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);                          // ISO
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], 12);
+  const d = new Date(s);
+  return isNaN(d) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12);
+}
+
+/* ------------------------------ data ------------------------------ */
+function buildLifts(text) {
+  text = text.replace(/^﻿/, '');
+  const res = Papa.parse(text, { header: true, skipEmptyLines: true, transformHeader: h => h.trim() });
+  const f = res.meta.fields || [];
+  const miss = ['Date', 'Exercise Name'].filter(n => !f.includes(n));
+  if (miss.length) throw new Error(`That file doesn't look like the expected export (missing: ${miss.join(', ')}). Columns found: ${f.join(', ') || 'none'}.`);
+  const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+  const LB = 2.2046226;
+  const rows = [];
+  res.data.forEach((r, i) => {
+    const d = parseDate(r['Date']);
+    const name = (r['Exercise Name'] || '').trim();
+    if (!d || !name) return;
+    let kg = num(r['Weight (KG)']), lb = num(r['Weight (LB)']);
+    if (kg == null && lb != null) kg = lb / LB;
+    if (lb == null && kg != null) lb = kg * LB;
+    if (kg == null) { kg = 0; lb = 0; }
+    rows.push({ i, d, name, order: num(r['Set Order']) ?? 0, kg, lb, reps: num(r['Reps']) });
+  });
+  if (!rows.length) throw new Error('No usable rows found in that file.');
+  rows.sort((a, b) => a.d - b.d || a.i - b.i);
+  const map = new Map();
+  for (const r of rows) {
+    let l = map.get(r.name);
+    if (!l) { l = { name: r.name, idx: map.size, sessions: new Map() }; map.set(r.name, l); }
+    const key = dkey(r.d);
+    let s = l.sessions.get(key);
+    if (!s) { s = { key, date: r.d, sets: [] }; l.sessions.set(key, s); }
+    s.sets.push(r);
+  }
+  return [...map.values()].map(l => ({ ...l, sessions: [...l.sessions.values()] }));
+}
+
+/* A set only counts once reps are logged. Top weight = heaviest completed set;
+   "reps at top" = best reps at that weight (your final AMRAP set on GreySkull). */
+function metrics(s, u) {
+  const w = x => u === 'kg' ? x.kg : x.lb;
+  const done = s.sets.filter(x => x.reps != null && x.reps > 0);
+  if (!done.length) return { done: false, setsTxt: [], nSets: 0 };
+  const top = Math.max(...done.map(w));
+  const topSets = done.filter(x => w(x) === top);
+  const bestReps = Math.max(...topSets.map(x => x.reps));
+  const e1rm = top > 0 ? (bestReps === 1 ? top : top * (1 + bestReps / 30)) : null;   // Epley
+  const setsTxt = [...done].sort((a, b) => w(a) - w(b) || a.order - b.order)
+    .map(x => ({ txt: (w(x) > 0 ? fmt(w(x)) : 'BW') + '×' + x.reps, top: w(x) === top }));
+  return {
+    done: true, top, bestReps, e1rm, bodyweight: top === 0, setsTxt, nSets: done.length,
+    totalReps: sum(done.map(x => x.reps)), volume: sum(done.map(x => w(x) * x.reps)),
+  };
+}
+
+function computeView() {
+  let latest = 0;
+  S.lifts.forEach(l => l.sessions.forEach(s => { latest = Math.max(latest, s.date.getTime()); }));
+  const days = { all: Infinity, 30: 30, 7: 7 }[S.range] ?? Infinity;
+  const cutoff = days === Infinity ? -Infinity : latest - (days - 1) * 864e5 - 1;
+  const lifts = S.lifts
+    .map(l => ({ ...l, ss: l.sessions.filter(s => s.date.getTime() >= cutoff).map(s => ({ ...s, m: metrics(s, S.unit) })) }))
+    .filter(l => l.ss.length);
+  return { lifts };
+}
+
+/* ------------------------------ theme ------------------------------ */
+const darkMQ = matchMedia('(prefers-color-scheme: dark)');
+const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : darkMQ.matches; };
+function tokens() {
+  const cs = getComputedStyle(document.documentElement);
+  const g = n => cs.getPropertyValue(n).trim();
+  return {
+    surface: g('--surface'), ink: g('--ink'), ink2: g('--ink-2'), muted: g('--muted'), grid: g('--grid'), axis: g('--axis'),
+    series: [1, 2, 3, 4, 5, 6, 7, 8].map(i => g('--series-' + i)),
+  };
+}
+const colorOf = (lift, t) => lift.idx < 8 ? t.series[lift.idx] : t.muted;
+const dotVar = lift => lift.idx < 8 ? `var(--series-${lift.idx + 1})` : 'var(--muted)';
+
+/* ------------------------------ chart plugins ------------------------------ */
+// Snap the pointer to the nearest date and return every point at that date.
+Chart.Interaction.modes.nearestX = function (chart, e) {
+  const all = []; let best = Infinity;
+  chart.data.datasets.forEach((ds, di) => {
+    if (!chart.isDatasetVisible(di)) return;
+    chart.getDatasetMeta(di).data.forEach((element, index) => {
+      if (element.skip || element.x == null || Number.isNaN(element.x)) return;
+      const d = Math.abs(element.x - e.x);
+      all.push({ element, datasetIndex: di, index, d });
+      if (d < best) best = d;
+    });
+  });
+  return all.filter(o => o.d - best < 0.5).map(({ element, datasetIndex, index }) => ({ element, datasetIndex, index }));
+};
+
+const crosshair = {
+  id: 'crosshair',
+  beforeDatasetsDraw(c, _a, o) {
+    if (!o.enabled || !c.tooltip || !c.tooltip.getActiveElements) return;
+    const a = c.tooltip.getActiveElements();
+    if (!a.length) return;
+    const { ctx, chartArea: { top, bottom } } = c;
+    ctx.save(); ctx.beginPath(); ctx.moveTo(a[0].element.x, top); ctx.lineTo(a[0].element.x, bottom);
+    ctx.lineWidth = 1; ctx.strokeStyle = o.color; ctx.stroke(); ctx.restore();
+  },
+};
+// One value label on the latest point, so the headline number is readable without hovering.
+const endLabel = {
+  id: 'endLabel',
+  afterDatasetsDraw(c, _a, o) {
+    const { ctx, chartArea } = c;
+    ctx.save();
+    ctx.font = '600 12px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.fillStyle = o.color; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    c.data.datasets.forEach((ds, i) => {
+      if (!ds.endLabel || !c.isDatasetVisible(i)) return;
+      let k = ds.data.length - 1;
+      while (k >= 0 && (ds.data[k] == null || ds.data[k].y == null)) k--;
+      if (k < 0) return;
+      const pt = c.getDatasetMeta(i).data[k];
+      if (!pt) return;
+      const txt = ds.endLabel(ds.data[k]);
+      const w = ctx.measureText(txt).width;
+      const x = Math.min(Math.max(pt.x, chartArea.left + w / 2), c.width - w / 2 - 2);
+      ctx.fillText(txt, x, pt.y - (ds.type === 'bar' ? 6 : 11));
+    });
+    ctx.restore();
+  },
+};
+
+/* ------------------------------ chart builders ------------------------------ */
+function makeChart(canvas, type, datasets, t, o) {
+  const u = S.unit;
+  const cfg = {
+    type,
+    data: { datasets },
+    plugins: [crosshair, endLabel],
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: reduceMotion ? false : { duration: 700, easing: 'easeOutQuart' },
+      layout: { padding: { top: 22, right: 8, left: 0, bottom: 0 } },
+      interaction: { mode: 'nearestX', intersect: false },
+      scales: {
+        x: {
+          type: 'time', offset: true,
+          time: { unit: 'day', displayFormats: { day: 'd MMM' } },
+          ticks: { source: 'data', color: t.muted, maxRotation: 0, autoSkipPadding: 14, font: { size: 11 } },
+          grid: { display: false }, border: { color: t.axis },
+        },
+        y: {
+          beginAtZero: !!o.zero, grace: '8%',
+          ticks: { color: t.muted, padding: 8, font: { size: 11 }, callback: v => fmt(v, 1) },
+          grid: { color: t.grid, lineWidth: 1, drawTicks: false }, border: { display: false },
+          title: { display: true, text: o.yTitle, color: t.muted, font: { size: 11, weight: '500' } },
+        },
+      },
+      plugins: {
+        crosshair: { enabled: type === 'line', color: t.axis },
+        endLabel: { color: t.ink },
+        legend: o.legend ? {
+          position: 'top', align: 'start',
+          labels: { color: t.ink2, usePointStyle: true, pointStyle: 'line', boxWidth: 22, padding: 16, font: { size: 12 } },
+        } : { display: false },
+        tooltip: {
+          backgroundColor: t.surface, titleColor: t.ink2, bodyColor: t.ink, footerColor: t.ink2,
+          borderColor: t.axis, borderWidth: 1, padding: 12, cornerRadius: 10, boxPadding: 6,
+          titleFont: { weight: '500', size: 12 }, bodyFont: { weight: '600', size: 13 }, footerFont: { weight: '400', size: 12 },
+          footerMarginTop: 8, boxWidth: 14, boxHeight: 3, usePointStyle: false,
+          callbacks: {
+            title: items => dFull(new Date(items[0].parsed.x)),
+            label: c => `${fmt(c.parsed.y, c.dataset.dec ?? 2)} ${c.dataset.unitLabel}   ${c.dataset.label}`,
+            labelColor: c => ({ borderColor: c.dataset.key, backgroundColor: c.dataset.key, borderWidth: 0, borderRadius: 2 }),
+            footer: items => {
+              const s = items[0].raw && items[0].raw.s;
+              if (!s || !s.setsTxt || !items.every(i => i.raw.s === s)) return [];
+              const lines = [`Sets (${u}×reps)`];
+              for (let i = 0; i < s.setsTxt.length; i += 4) lines.push(s.setsTxt.slice(i, i + 4).map(x => x.txt).join('  ·  '));
+              return lines;
+            },
+          },
+        },
+      },
+    },
+  };
+  const c = new Chart(canvas, cfg);
+  charts.push(c);
+  return c;
+}
+
+const lineSet = (label, pts, fy, color, t, extra = {}) => ({
+  type: 'line', label, key: color,
+  data: pts.map(s => ({ x: s.date, y: fy(s.m), s: s.m })).filter(p => p.y != null),
+  borderColor: color, backgroundColor: color, borderWidth: 2, borderJoinStyle: 'round', borderCapStyle: 'round',
+  pointBackgroundColor: color, pointBorderColor: t.surface, pointBorderWidth: 2,
+  pointRadius: 5, pointHoverRadius: 7, pointHitRadius: 16, spanGaps: true, tension: 0, ...extra,
+});
+const barSet = (label, pts, fy, color, extra = {}) => ({
+  type: 'bar', label, key: color,
+  data: pts.map(s => ({ x: s.date, y: fy(s.m), s: s.m })).filter(p => p.y != null),
+  backgroundColor: color, hoverBackgroundColor: mix(color, '#ffffff', 0.22),
+  borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 }, borderSkipped: false,
+  maxBarThickness: 24, categoryPercentage: 0.9, barPercentage: 0.9, ...extra,
+});
+
+function chartCard(title, sub, span2, delay) {
+  const canvas = el('canvas', { role: 'img' });
+  const node = el('section', { class: 'card chart-card rise' + (span2 ? ' span2' : ''), style: `animation-delay:${delay * 70}ms` },
+    el('header', { class: 'card-h' }, el('h3', { text: title }), el('p', { text: sub })),
+    el('div', { class: 'chart-box' }, canvas));
+  $('#charts').append(node);
+  return canvas;
+}
+
+function liftCharts(lift, t) {
+  const u = S.unit, col = colorOf(lift, t);
+  const pts = lift.ss.filter(s => s.m.done);
+  const host = $('#charts');
+  if (!pts.length) {
+    host.append(el('section', { class: 'card span2 empty rise', text: 'No reps are logged for this lift in the selected range.' }));
+    return;
+  }
+  const bw = pts.every(s => s.m.bodyweight);
+  const last = pts[pts.length - 1].m;
+  let n = 0;
+  if (!bw) {
+    const cv = chartCard('Weight over time', 'Heaviest set each session, plus an estimated 1RM (Epley: weight × (1 + reps ÷ 30)).', true, n++);
+    cv.setAttribute('aria-label', `${lift.name} heaviest weight over time. Latest ${fmt(last.top)} ${u}.`);
+    makeChart(cv, 'line', [
+      lineSet('Heaviest weight', pts, m => m.top, col, t, { unitLabel: u, endLabel: p => `${fmt(p.y)} ${u}` }),
+      lineSet('Estimated 1RM', pts, m => m.e1rm, t.ink2, t, { unitLabel: u, dec: 1, pointRadius: 4 }),
+    ], t, { yTitle: u, legend: true });
+  }
+  const cv2 = chartCard(bw ? 'Reps in best set' : 'Reps at top weight',
+    bw ? 'Most reps in a single set each session.' : 'Best set at the heaviest weight, usually your final AMRAP set.', bw ? false : false, n++);
+  cv2.setAttribute('aria-label', `${lift.name} reps over time. Latest ${last.bestReps} reps.`);
+  makeChart(cv2, 'bar', [barSet('Reps', pts, m => m.bestReps, col, { unitLabel: 'reps', dec: 0, endLabel: p => String(p.y) })],
+    t, { yTitle: 'reps', zero: true });
+  const cv3 = chartCard(bw ? 'Total reps per session' : 'Training volume',
+    bw ? 'All completed reps added together.' : `Sets × reps × weight, all sets added together (${u}).`, false, n++);
+  makeChart(cv3, 'bar', [barSet(bw ? 'Total reps' : 'Volume', pts, m => bw ? m.totalReps : m.volume, col,
+    { unitLabel: bw ? 'reps' : u, dec: 0, endLabel: p => fmt(p.y, 0) })], t, { yTitle: bw ? 'reps' : u, zero: true });
+}
+
+function allCharts(view, t) {
+  const u = S.unit;
+  const shown = view.lifts.filter(l => l.idx < 8);
+  const loaded = shown.filter(l => l.ss.some(s => s.m.done && !s.m.bodyweight));
+  let n = 0;
+  if (loaded.length) {
+    const cv = chartCard('Heaviest weight, every lift', 'Top set per session. Click a name in the legend to hide or show a lift.', true, n++);
+    cv.setAttribute('aria-label', 'Heaviest weight per session for each lift.');
+    makeChart(cv, 'line', loaded.map(l => lineSet(l.name, l.ss.filter(s => s.m.done && !s.m.bodyweight), m => m.top, colorOf(l, t), t, { unitLabel: u })),
+      t, { yTitle: u, legend: true });
+  }
+  const withReps = shown.filter(l => l.ss.some(s => s.m.done));
+  if (withReps.length) {
+    const cv = chartCard('Reps at top weight, every lift', 'Best set at the heaviest weight each session.', true, n++);
+    cv.setAttribute('aria-label', 'Reps at top weight per session for each lift.');
+    makeChart(cv, 'line', withReps.map(l => lineSet(l.name, l.ss.filter(s => s.m.done), m => m.bestReps, colorOf(l, t), t, { unitLabel: 'reps', dec: 0 })),
+      t, { yTitle: 'reps', legend: true, zero: true });
+  }
+  if (view.lifts.some(l => l.idx >= 8)) {
+    $('#charts').append(el('p', { class: 'hint span2', text: 'Overview charts show the first 8 lifts; select any other lift above to see it on its own.' }));
+  }
+}
+
+/* ------------------------------ render ------------------------------ */
+function renderChips(view) {
+  const box = $('#chips'); box.replaceChildren();
+  const mk = (value, label, dot, cls = '') => el('button', {
+    class: 'chip ' + cls, type: 'button', 'aria-pressed': String(S.selected === value),
+    onclick: () => { S.selected = value; render(); },
+  }, el('span', { class: 'dot', style: dot ? `--dot:${dot}` : '' }), label);
+  box.append(mk('all', 'All lifts', '', 'all'));
+  view.lifts.forEach(l => box.append(mk(l.name, l.name, dotVar(l))));
+  document.querySelectorAll('#rangeSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === S.range)));
+  document.querySelectorAll('#unitSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === S.unit)));
+}
+
+function delta(change, u, since) {
+  if (change == null) return el('div', { class: 't-sub', text: 'First session logged' });
+  if (Math.abs(change) < 0.005) return el('div', { class: 't-sub', text: `● No change since ${since}` });
+  const up = change > 0;
+  return el('div', { class: 't-sub' + (up ? ' up' : '') }, `${up ? '▲ +' : '▼ −'}${fmt(Math.abs(change), 1)} ${u} since ${since}`);
+}
+const tile = (label, value, unit, sub, i) => el('div', { class: 'card tile rise', style: `animation-delay:${i * 60}ms` },
+  el('div', { class: 't-label', text: label }),
+  el('div', { class: 't-val' }, value, unit ? el('span', { class: 't-unit', text: ' ' + unit }) : null),
+  typeof sub === 'string' ? el('div', { class: 't-sub', text: sub }) : sub);
+
+function renderStats(view) {
+  const box = $('#stats'); box.replaceChildren();
+  const u = S.unit;
+  if (S.selected === 'all') {
+    const days = new Set(); let sets = 0, vol = 0;
+    view.lifts.forEach(l => l.ss.forEach(s => { if (s.m.done) { days.add(s.key); sets += s.m.nSets; vol += s.m.volume; } }));
+    box.append(
+      tile('Workouts logged', String(days.size), '', 'distinct training days', 0),
+      tile('Lifts tracked', String(view.lifts.length), '', 'exercises in this range', 1),
+      tile('Sets completed', fmt(sets, 0), '', 'sets with reps logged', 2),
+      tile('Total volume', fmt(vol, 0), u, 'weight × reps, all lifts', 3));
+    return;
+  }
+  const lift = view.lifts.find(l => l.name === S.selected);
+  const pts = lift.ss.filter(s => s.m.done);
+  if (!pts.length) return;
+  const first = pts[0], lastS = pts[pts.length - 1];
+  const since = dShort(first.date);
+  if (pts.every(s => s.m.bodyweight)) {
+    box.append(
+      tile('Best set', String(Math.max(...pts.map(s => s.m.bestReps))), 'reps', 'most reps in one set', 0),
+      tile('Total reps', fmt(sum(pts.map(s => s.m.totalReps)), 0), '', 'across all sessions', 1),
+      tile('Sessions', String(pts.length), '', `latest: ${dDay(lastS.date)}`, 2));
+    return;
+  }
+  const dTop = pts.length > 1 ? lastS.m.top - first.m.top : null;
+  const dE = pts.length > 1 ? lastS.m.e1rm - first.m.e1rm : null;
+  const vol = sum(pts.map(s => s.m.volume));
+  box.append(
+    tile('Heaviest weight', fmt(lastS.m.top), u, delta(dTop, u, since), 0),
+    tile('Estimated 1RM', fmt(lastS.m.e1rm, 1), u, delta(dE, u, since), 1),
+    tile('Sessions', String(pts.length), '', `latest: ${dDay(lastS.date)}`, 2),
+    tile('Total volume', fmt(vol, 0), u, `avg ${fmt(vol / pts.length, 0)} ${u} per session`, 3));
+}
+
+function renderCharts(view) {
+  charts.forEach(c => c.destroy()); charts = [];
+  $('#charts').replaceChildren();
+  const t = tokens();
+  Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+  Chart.defaults.color = t.muted;
+  if (S.selected === 'all') allCharts(view, t);
+  else liftCharts(view.lifts.find(l => l.name === S.selected), t);
+}
+
+function renderTable(view) {
+  const all = S.selected === 'all';
+  const rows = [];
+  view.lifts.forEach(l => { if (all || l.name === S.selected) l.ss.forEach(s => rows.push({ l, s })); });
+  rows.sort((a, b) => b.s.date - a.s.date || a.l.idx - b.l.idx);
+  $('#tableTitle').textContent = 'Session log';
+  $('#tableSub').textContent = `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}, newest first. Heaviest sets are outlined.`;
+  const u = S.unit;
+  const th = (text, cls = '') => el('th', { class: cls, text });
+  $('#thead').replaceChildren(el('tr', {}, th('Date'), all ? th('Lift') : null, th('Sets (' + u + '×reps)'),
+    th('Top weight', 'num'), th('Reps at top', 'num hide-sm'), th('Volume', 'num hide-sm')));
+  const tb = $('#tbody'); tb.replaceChildren();
+  rows.forEach(({ l, s }) => {
+    const m = s.m;
+    const setsCell = m.done
+      ? el('td', {}, m.setsTxt.map(x => el('span', { class: 'set' + (x.top ? ' top' : ''), text: x.txt })))
+      : el('td', { class: 'muted', text: 'No reps logged' });
+    tb.append(el('tr', {},
+      el('td', { class: 'num', style: 'text-align:left', text: dDay(s.date) }),
+      all ? el('td', {}, el('button', { class: 'lift-link', type: 'button', onclick: () => { S.selected = l.name; render(); } },
+        el('span', { class: 'dot', style: `--dot:${dotVar(l)}` }), el('span', { text: l.name }))) : null,
+      setsCell,
+      el('td', { class: 'num', text: m.done ? (m.bodyweight ? 'Bodyweight' : `${fmt(m.top)} ${u}`) : '–' }),
+      el('td', { class: 'num hide-sm', text: m.done ? String(m.bestReps) : '–' }),
+      el('td', { class: 'num hide-sm', text: m.done && !m.bodyweight ? `${fmt(m.volume, 0)} ${u}` : '–' })));
+  });
+}
+
+function renderHeader() {
+  const days = new Set(); let sets = 0; const dates = [];
+  S.lifts.forEach(l => l.sessions.forEach(s => {
+    const m = metrics(s, 'kg');
+    if (m.done) { days.add(s.key); sets += m.nSets; dates.push(s.date); }
+  }));
+  const parts = [`${days.size} workouts`, `${S.lifts.length} lifts`, `${fmt(sets, 0)} sets`];
+  if (dates.length) {
+    const a = new Date(Math.min(...dates)), b = new Date(Math.max(...dates));
+    parts.push(`${dShort(a)} – ${b.toLocaleDateString('en-IE', { day: 'numeric', month: 'short', year: 'numeric' })}`);
+  }
+  if (S.source) parts.push(S.source);
+  $('#subtitle').textContent = parts.join(' · ');
+}
+
+function render() {
+  if (!S.lifts.length) return;
+  const view = computeView();
+  if (S.selected !== 'all' && !view.lifts.some(l => l.name === S.selected)) S.selected = 'all';
+  renderHeader(); renderChips(view); renderStats(view); renderCharts(view); renderTable(view);
+}
+
+/* ------------------------------ loading ------------------------------ */
+function csvCandidates(raw) {
+  raw = raw.trim();
+  let m = raw.match(/docs\.google\.com\/spreadsheets\/d\/([\w-]+)/);
+  if (m && !/output=csv|format=csv/.test(raw)) return [`https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv`];
+  m = raw.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:[^#]*&)?id=)([\w-]{15,})/) || raw.match(/[?&]id=([\w-]{15,})/);
+  if (m && /google\.com/.test(raw)) return [
+    `https://drive.usercontent.google.com/download?id=${m[1]}&export=download`,
+    `https://drive.google.com/uc?export=download&id=${m[1]}`,
+  ];
+  return [raw];
+}
+async function fetchCsv(raw) {
+  let err;
+  for (const url of csvCandidates(raw)) {
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`The server answered with HTTP ${r.status}.`);
+      const text = await r.text();
+      if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('Got a web page instead of a CSV. Check the file is shared as “Anyone with the link”.');
+      return text;
+    } catch (e) { err = e; }
+  }
+  throw err;
+}
+const explain = e => e instanceof TypeError
+  ? 'The browser could not fetch that link. Google Drive often blocks this from other sites. Use “Choose file…”, or publish a Google Sheet as CSV.'
+  : e.message;
+
+function setStatus(msg, kind = '') { const s = $('#srcStatus'); s.textContent = msg; s.className = 'status ' + kind; }
+function notice(msg) { $('#noticeText').textContent = msg; $('#notice').hidden = !msg; }
+function ingest(text, label) {
+  S.lifts = buildLifts(text); S.source = label;
+  render();
+}
+async function withBusy(fn) {
+  $('#app').classList.add('loading');
+  try { await fn(); } finally { $('#app').classList.remove('loading'); }
+}
+async function loadFile(file) {
+  setStatus(`Reading ${file.name}…`);
+  await withBusy(async () => {
+    try { ingest(await file.text(), file.name); setStatus(`Loaded ${file.name}.`, 'ok'); notice(''); }
+    catch (e) { setStatus(e.message, 'err'); }
+  });
+}
+
+/* ------------------------------ wiring ------------------------------ */
+function init() {
+  const saved = store.get('ll.theme');
+  if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+  $('#themeBtn').addEventListener('click', () => {
+    const next = isDark() ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next; store.set('ll.theme', next); render();
+  });
+  darkMQ.addEventListener('change', () => render());
+  $('#srcBtn').addEventListener('click', e => {
+    const open = $('#source').hidden; $('#source').hidden = !open; e.currentTarget.setAttribute('aria-expanded', String(open));
+    if (open) $('#csvUrl').focus();
+  });
+  $('#noticeX').addEventListener('click', () => notice(''));
+  $('#rangeSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.range = b.dataset.v; store.set('ll.range', S.range); render(); });
+  $('#unitSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.unit = b.dataset.v; store.set('ll.unit', S.unit); render(); });
+
+  $('#srcForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const url = $('#csvUrl').value.trim();
+    if (!url) { setStatus('Paste a link first, or choose a file.', 'err'); return; }
+    setStatus('Loading…');
+    await withBusy(async () => {
+      try { ingest(await fetchCsv(url), 'live from your link'); store.set('ll.url', url); setStatus('Loaded from your link.', 'ok'); notice(''); }
+      catch (err) { setStatus(explain(err), 'err'); }
+    });
+  });
+  $('#csvFile').addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; });
+
+  let depth = 0; const drop = $('#drop');
+  addEventListener('dragenter', e => { e.preventDefault(); depth++; drop.classList.add('on'); });
+  addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) drop.classList.remove('on'); });
+  addEventListener('dragover', e => e.preventDefault());
+  addEventListener('drop', e => { e.preventDefault(); depth = 0; drop.classList.remove('on'); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+
+  start();
+}
+
+async function start() {
+  if (!window.Chart || !window.Papa) {
+    $('#subtitle').textContent = 'Could not load the chart libraries.';
+    notice('The charting libraries come from a CDN (jsdelivr) and did not load. Check your connection and reload.');
+    return;
+  }
+  const param = new URLSearchParams(location.search).get('csv') || '';
+  $('#csvUrl').value = param || store.get('ll.url') || '';
+  if (param) {
+    try { ingest(await fetchCsv(param), 'live from your link'); return; }
+    catch (e) { notice(`${explain(e)} Showing the latest synced copy instead.`); }
+  }
+  if (CONFIG.CSV_URL) {
+    try { ingest(await fetchCsv(CONFIG.CSV_URL), 'synced from Google Drive'); return; }
+    catch (e) { notice(`${explain(e)} Showing the built-in snapshot instead.`); }
+  } else {
+    notice('Showing a built-in snapshot of your data. Open “Data source” to link your Google Drive CSV.');
+  }
+  try { ingest($('#embeddedCsv').textContent, 'built-in snapshot'); }
+  catch (e) { $('#subtitle').textContent = e.message; }
+}
+
+init();
+})();
+</script>
+</body>
+</html>
